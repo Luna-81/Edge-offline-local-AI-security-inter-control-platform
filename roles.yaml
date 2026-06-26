@@ -1,0 +1,85 @@
+# ============================================================
+# 8×64 Multi-Role Feature Routing Configuration (6-Role Version + UX Enhancement)
+# Model: BGE-small-zh (512-dim → 8 segments × 64-dim)
+# ============================================================
+
+model:
+  embedding:
+    name: "BGE-small-zh"
+    dimension: 512
+    segments: 8
+    segment_size: 64
+
+  llm:
+    name: "Gemma-2-2B"
+    quantization: "Q4_K_M"
+    context_window: 4096
+    device: "cuda"
+
+retrieval:
+  top_k_per_role: 3
+  coarse_top_k: 100
+
+# ============================================================
+# 6-Role Feature Weight Configuration (UX Enhanced)
+# 256 → 128 → 64 → 32 → 16 → 16
+# ============================================================
+
+roles:
+  # ============================================================
+  # 1. Intent Understanding + User Experience (256-dim) 
+  # — Deep Semantic Layer + UX Insight
+  # ============================================================
+  - name: "intent_classifier"
+    description: "Decompose user requirements, identify explicit and implicit intents, and discover UX pain points."
+    weight: [0.1, 0.1, 0.1, 0.1, 0.2, 0.2, 0.7, 0.6]
+    dimension: 256
+    segments: [4, 5, 6, 7]  # S5, S6, S7, S8 (4 segments × 64 = 256)
+    # UX Enhancement: S7-S8 (128-dim) used to understand expected user experience
+
+  # ============================================================
+  # 2. Security & Compliance (128-dim) — Unchanged
+  # ============================================================
+  - name: "security_auditor"
+    description: "Review abnormal behavior, detect violations and jailbreak attempts."
+    weight: [0.2, 0.2, 0.6, 0.2, 0.2, 0.6, 0.2, 0.2]
+    dimension: 128
+    segments: [2, 5]  # S3, S6 (2 segments × 64 = 128)
+
+  # ============================================================
+  # 3. Business Logic + User Experience (64-dim) 
+  # — Intermediate Logic Segments + UX Optimization
+  # ============================================================
+  - name: "architect"
+    description: "Streamline business processes, validate rules, discover logic loopholes, and optimize user interaction paths."
+    weight: [0.1, 0.2, 0.4, 0.4, 0.3, 0.2, 0.1, 0.1]
+    dimension: 64
+    segments: [2, 3]  # S3, S4 (2 segments × 64 = 128, truncated to 64)
+    # UX Enhancement: S3-S4 used to analyze if user operation paths are seamless
+
+  # ============================================================
+  # 4. Technical Execution (32-dim) — Unchanged
+  # ============================================================
+  - name: "config_expert"
+    description: "Precisely match commands, parameters, and configuration files."
+    weight: [0.7, 0.6, 0.2, 0.1, 0.1, 0.1, 0.1, 0.1]
+    dimension: 32
+    segments: [0, 1]  # S1, S2 (2 segments × 64 = 128, truncated to 32)
+
+  # ============================================================
+  # 5. Deep Tracking (16-dim) — Unchanged
+  # ============================================================
+  - name: "deep"
+    description: "Temporal causal analysis, state evolution tracking, and root cause localization."
+    weight: [0.1, 0.1, 0.2, 0.3, 0.6, 0.7, 0.5, 0.3]
+    dimension: 16
+    segments: [3, 4, 5]  # S4, S5, S6 (3 segments × 64 = 192, truncated to 16)
+
+  # ============================================================
+  # 6. Precision Locking (16-dim) — Unchanged
+  # ============================================================
+  - name: "precision"
+    description: "System call numbers, error codes, hash fingerprints, and feature locking."
+    weight: [0.1, 0.1, 0.1, 0.1, 0.2, 0.3, 0.6, 0.8]
+    dimension: 16
+    segments: [6, 7]  # S7, S8 (2 segments × 64 = 128, truncated to 16)
