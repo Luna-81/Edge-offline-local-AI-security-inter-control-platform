@@ -1,0 +1,230 @@
+"""
+自我感知 API 路由 (v4.9)
+提供 AI 主动感知环境的能力
+内部服务，使用 INTERNAL_TOKEN 认证
+"""
+
+import os
+import logging
+from fastapi import APIRouter, Depends, HTTPException, Header
+from pydantic import BaseModel
+from typing import Optional, Dict, Any
+
+logger = logging.getLogger("Knowpasser.SelfAwareness.Routes")
+
+router = APIRouter(prefix="/api/self_awareness", tags=["self_awareness"])
+
+# =========================================================
+# 内部认证
+# =========================================================
+
+def verify_internal_token(x_internal_token: str = Header(..., alias="X-Internal-Token")):
+    """验证内部 token"""
+    expected_token = os.getenv("INTERNAL_TOKEN", "default_token")
+    if x_internal_token != expected_token:
+        raise HTTPException(status_code=401, detail="Invalid internal token")
+    return True
+
+# =========================================================
+# 数据模型
+# =========================================================
+
+class StartAwarenessRequest(BaseModel):
+    """启动自我感知请求"""
+    interval: int = 1800  # 默认30分钟
+
+class TriggerResponse(BaseModel):
+    """触发响应"""
+    status: str  # "triggered" | "error"
+    message: Optional[str] = None
+
+# =========================================================
+# API 端点 - 全部使用 INTERNAL_TOKEN
+# =========================================================
+
+@router.get("/status")
+async def get_status(token_valid: bool = Depends(verify_internal_token)):
+    """
+    获取自我感知状态
+    使用 INTERNAL_TOKEN 认证
+    """
+    try:
+        from local_brain import get_awareness_status
+        status = get_awareness_status()
+        return status
+    except Exception as e:
+        logger.error(f"获取感知状态失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/trigger", response_model=TriggerResponse)
+async def trigger(token_valid: bool = Depends(verify_internal_token)):
+    """
+    手动触发一次感知循环
+    使用 INTERNAL_TOKEN 认证
+    """
+    try:
+        from local_brain import trigger_awareness
+        result = await trigger_awareness()
+        return result
+    except Exception as e:
+        logger.error(f"手动触发感知失败: {e}")
+        return TriggerResponse(status="error", message=str(e))
+
+@router.post("/start")
+async def start(
+    req: StartAwarenessRequest,
+    token_valid: bool = Depends(verify_internal_token)
+):
+    """
+    启动自我感知循环（可配置间隔）
+    使用 INTERNAL_TOKEN 认证
+    """
+    try:
+        from local_brain import start_self_awareness
+        await start_self_awareness(interval_seconds=req.interval)
+        return {
+            "status": "started",
+            "interval": req.interval,
+            "message": f"自我感知已启动，间隔 {req.interval} 秒"
+        }
+    except Exception as e:
+        logger.error(f"启动自我感知失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/stop")
+async def stop(token_valid: bool = Depends(verify_internal_token)):
+    """
+    停止自我感知循环
+    使用 INTERNAL_TOKEN 认证
+    """
+    try:
+        from local_brain import stop_self_awareness
+        await stop_self_awareness()
+        return {"status": "stopped", "message": "自我感知已停止"}
+    except Exception as e:
+        logger.error(f"停止自我感知失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/history")
+async def get_history(
+    limit: int = 10,
+    token_valid: bool = Depends(verify_internal_token)
+):
+    """
+    获取感知历史记录
+    使用 INTERNAL_TOKEN 认证
+    """
+    try:
+        from local_brain import self_awareness_instance
+        if self_awareness_instance:
+            history = self_awareness_instance.history[-limit:]
+            return {
+                "count": len(history),
+                "history": history
+            }
+        return {
+            "count": 0,
+            "history": [],
+            "message": "Self-awareness not initialized"
+        }
+    except Exception as e:
+        logger.error(f"获取历史记录失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/gaps")
+async def get_gaps(token_valid: bool = Depends(verify_internal_token)):
+    """
+    获取当前识别的知识缺口
+    使用 INTERNAL_TOKEN 认证
+    """
+    try:
+        from local_brain import get_awareness_status
+        status = get_awareness_status()
+        gaps = status.get("knowledge_stats", {}).get("knowledge_gaps", [])
+        return {
+            "count": len(gaps),
+            "gaps": gaps
+        }
+    except Exception as e:
+        logger.error(f"获取知识缺口失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/report/generate")
+async def generate_report(token_valid: bool = Depends(verify_internal_token)):
+    """
+    手动生成感知报告
+    使用 INTERNAL_TOKEN 认证
+    """
+    try:
+        from local_brain import self_awareness_instance
+        if self_awareness_instance:
+            report = await self_awareness_instance._generate_report()
+            return {
+                "status": "generated",
+                "report": report
+            }
+        return {
+            "status": "error",
+            "message": "Self-awareness not initialized"
+        }
+    except Exception as e:
+        logger.error(f"生成报告失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# =========================================================
+# 存储相关（感知闭环）
+# =========================================================
+
+class ImportManPageRequest(BaseModel):
+    """导入 man 页面请求"""
+    tool_name: str
+    content: str
+
+class ImportManPageResponse(BaseModel):
+    """导入 man 页面响应"""
+    status: str
+    segment_count: int = 0
+    tool_name: str = ""
+    message: Optional[str] = None
+
+
+@router.post("/import_man_page", response_model=ImportManPageResponse)
+async def import_man_page(
+    req: ImportManPageRequest,
+    token_valid: bool = Depends(verify_internal_token)
+):
+    """
+    导入 man 页面到 user_experiment_data 表
+    由 self_awareness 感知闭环调用
+    使用 INTERNAL_TOKEN 认证
+    """
+    try:
+        from storage_bridge import get_writer
+        
+        writer = get_writer()
+        if writer is None:
+            logger.error("storage_bridge writer 未初始化")
+            return ImportManPageResponse(
+                status="error",
+                message="Storage bridge not initialized"
+            )
+        
+        segment_count = writer.import_man_page(req.tool_name, req.content)
+        
+        if segment_count > 0:
+            writer.add_man_bookmark(req.tool_name, "", segment_count)
+            logger.info(f"📖 man 页面已导入: {req.tool_name} ({segment_count} 段)")
+        
+        return ImportManPageResponse(
+            status="success",
+            segment_count=segment_count,
+            tool_name=req.tool_name,
+            message=f"成功导入 {segment_count} 段"
+        )
+        
+    except Exception as e:
+        logger.error(f"导入 man 页面失败: {e}")
+        return ImportManPageResponse(
+            status="error",
+            message=str(e)
+        )
